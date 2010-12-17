@@ -1,0 +1,176 @@
+#!/usr/bin/perl
+#
+# @DESC: tweetYourGit sends a tweet after every of your git commits;
+#        just put this script in your .git/hooks/ folder of your repository
+#
+#
+# Copyright (C) Sven Burkard
+#
+# This program is free software;you can redistribute it and/or modify 
+# it under the terms of the GNU General Public License as published 
+# by the Free Software Foundation; either version 3 of the License, 
+# or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, 
+# but WITHOUT ANY WARRANTY; without even the implied 
+# warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# 
+# See the GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License 
+# along with this program; if not, see <http://www.gnu.org/licenses/>.
+################################################################################
+
+
+use strict;
+use warnings;
+
+use Net::Twitter::OAuth;
+use WWW::Shorten::Bitly;
+
+
+# you only need to change the values of this hash
+my $CONFIG  = {
+                'gitHubAuthor'  =>  '',   # only needed for building a commit url, if github.com is in use
+                'repository'    =>  '',   
+                'bitly'         =>  {                               # this is 
+                                      'login'               =>  '', # only needed 
+                                      'apiKey'              =>  '', # if github.com 
+                                    },                              # is in use
+                'twitter'       =>  {
+                                      'consumer_key'        =>  '',
+                                      'consumer_secret'     =>  '',
+                                      'access_token'        =>  '',
+                                      'access_token_secret' =>  '',
+                                    },
+              };
+
+
+&checkConfig();
+my $commit  = &getCommit();
+&tweetYourGit();
+
+
+
+
+#--------------------------------------------------
+sub printError() {
+# @AUTHOR:  Sven Burkard
+# @DESC  :  prints error messages
+#--------------------------------------------------
+  my $msg  = shift();
+
+  print STDERR "[ERROR]: $msg\n";
+}
+
+#--------------------------------------------------
+sub checkConfig() {
+# @AUTHOR:  Sven Burkard
+# @DESC  :  checks all user configs
+#--------------------------------------------------
+  if(!defined($CONFIG->{'repository'} || $CONFIG->{'repository'} eq '')){
+    &printError("\$CONFIG->{'repository'} is not defined");
+  }
+  if(defined($CONFIG->{'gitHubAuthor'}) && $CONFIG->{'gitHubAuthor'} ne ''){
+    if(!defined($CONFIG->{'bitly'}->{'login'} || $CONFIG->{'bitly'}->{'login'} eq '')){
+      &printError("\$CONFIG->{'bitly'}->{'login'} is not defined");
+    }
+    if(!defined($CONFIG->{'bitly'}->{'apiKey'} || $CONFIG->{'bitly'}->{'apiKey'} eq '')){
+      &printError("\$CONFIG->{'bitly'}->{'apiKey'} is not defined");
+    }
+  }
+  if(!defined($CONFIG->{'twitter'}->{'consumer_key'} || $CONFIG->{'twitter'}->{'consumer_key'} eq '')){
+    &printError("\$CONFIG->{'twitter'}->{'consumer_key'} is not defined");
+  }
+  if(!defined($CONFIG->{'twitter'}->{'consumer_secret'} || $CONFIG->{'twitter'}->{'consumer_secret'} eq '')){
+    &printError("\$CONFIG->{'twitter'}->{'consumer_secret'} is not defined");
+  }
+  if(!defined($CONFIG->{'twitter'}->{'access_token'} || $CONFIG->{'twitter'}->{'access_token'} eq '')){
+    &printError("\$CONFIG->{'twitter'}->{'access_token'} is not defined");
+  }
+  if(!defined($CONFIG->{'twitter'}->{'access_token_secret'} || $CONFIG->{'twitter'}->{'access_token_secret'} eq '')){
+    &printError("\$CONFIG->{'twitter'}->{'access_token_secret'} is not defined");
+  }
+}
+
+#--------------------------------------------------
+sub getCommit() {
+# @AUTHOR:  Sven Burkard
+# @DESC  :  gets last commit infos
+#--------------------------------------------------
+  my $cmd     = 'git log --pretty=short -n 1';
+  my $result  = `$cmd`;
+  my $commit;
+
+  if(!defined($result)){
+    &printError("$cmd failed");
+    exit();
+  }
+
+  $result =~  m/commit ([^\n]+)\nAuthor: ([^<]+)<[^>]+>(.+)/sg;
+  if(!defined($1 || $2 || $3)){
+    &printError("wrong matching");
+    exit();
+  }
+
+  $commit->{'key'}    = $1;
+  $commit->{'author'} = $2;
+  $commit->{'msg'}    = $3;
+
+  $commit->{'key'}    =~  s/^\s+|\s+$//sg;
+  $commit->{'author'} =~  s/^\s+|\s+$//sg;
+  $commit->{'msg'}    =~  s/\n|\s+/ /sg;
+  $commit->{'msg'}    =~  s/^\s+|\s+$//sg;
+
+  if(defined($CONFIG->{'gitHubAuthor'}) && $CONFIG->{'gitHubAuthor'} ne ''){
+    $commit->{'url'}->{'long'}  = "http://github.com/$CONFIG->{'gitHubAuthor'}/$CONFIG->{'repository'}/commit/$commit->{'key'}";
+    $commit->{'url'}->{'short'} =  makeashorterlink($commit->{'url'}->{'long'}, $CONFIG->{'bitly'}->{'login'}, $CONFIG->{'bitly'}->{'apiKey'});
+    if(!defined($commit->{'url'}->{'short'})){
+      &printError("url can't be shorted");
+      $commit->{'url'}->{'short'} = $commit->{'url'}->{'long'};
+    }
+    $commit->{'url'}->{'short'} .= ' ';
+  }else{
+    $commit->{'url'}->{'short'} = '';
+  }
+
+  $commit->{'all'}            = "#$CONFIG->{'repository'} $commit->{'url'}->{'short'}$commit->{'author'} - $commit->{'msg'}";
+
+  if(length($commit->{'all'}) > 140){
+    $commit->{'all'}  =~  m/(.{137})/g;
+    if(defined($1)){
+      $commit->{'all'} = $1.'...';
+    }else{
+      &printError("message size must be 140 and can't be reduced");
+      exit();
+    }
+  }
+
+
+  return($commit);
+}
+
+#--------------------------------------------------
+sub tweetYourGit() {
+# @AUTHOR:  Sven Burkard
+# @DESC  :  tweets your commit summary
+#--------------------------------------------------
+  my $client = Net::Twitter::OAuth->new(
+    consumer_key    => $CONFIG->{'twitter'}->{'consumer_key'},
+    consumer_secret => $CONFIG->{'twitter'}->{'consumer_secret'},
+  );
+
+  if(defined($CONFIG->{'twitter'}->{'access_token'} && $CONFIG->{'twitter'}->{'access_token_secret'})){
+    $client->access_token($CONFIG->{'twitter'}->{'access_token'});
+    $client->access_token_secret($CONFIG->{'twitter'}->{'access_token_secret'});
+    if($client->authorized){
+      if(!defined($client->update({ status => $commit->{'all'} }))){
+        &printError("message can't be sent");
+      }
+    }else{
+      &printError("auth failed");
+    }
+  }else{
+    &printError("CONFIG hash has no valid twitter values");
+  } 
+}

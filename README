@@ -1,0 +1,59 @@
+tweetYourGit
+============
+
+This is a little script for sending a tweet after every git commit.
+
+It's no big deal, but maybe someone can use it.
+
+
+Dependencies
+------------
+- some Perl modules from CPAN
+
+    Net::Twitter::OAuth
+    WWW::Shorten::Bitly
+
+- a bit.ly account for shorting the urls  # only needed, if you use github.com
+- and of course a twitter account ;-)
+
+
+Cloning
+-------
+
+    git clone http://git.sven-burkard.de/tweetYourGit
+
+or, from github.com mirror:
+
+    git clone git://github.com/svenburkard/tweetYourGit
+
+
+Configuring
+-----------
+You just have to fill the $CONFIG hash with your values.
+
+    my $CONFIG  = {
+                    'gitHubAuthor'  =>  '',   # only needed for building a commit url, if you use github.com
+                    'repository'    =>  '',
+                    'bitly'         =>  {                               # this is 
+                                          'login'               =>  '', # only needed 
+                                          'apiKey'              =>  '', # if github.com 
+                                        },                              # is in use
+                    'twitter'       =>  {
+                                          'consumer_key'        =>  '',
+                                          'consumer_secret'     =>  '',
+                                          'access_token'        =>  '',
+                                          'access_token_secret' =>  '',
+                                        },
+                  };
+
+
+Using
+-----
+Just put this script in your .git/hooks/ folder of your repository.
+
+
+Author
+------
+Sven Burkard - dev@sven-burkard.de
+
+http://sven-burkard.de
